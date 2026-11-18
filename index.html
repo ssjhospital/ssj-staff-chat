@@ -231,6 +231,14 @@ svg{flex-shrink:0}
 .hero .quick{margin-bottom:20px}
 .stats{display:flex;flex-wrap:wrap;gap:8px 28px;margin:0;padding-top:16px;border-top:1px solid var(--line)}
 .stats div{display:flex;align-items:baseline;gap:6px}
+/* QR card: lets staff show the chatbot link for a colleague to scan */
+.share{margin-top:16px;display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:12px 14px}
+.share img{width:112px;height:112px;flex:none;background:#fff;border-radius:8px;padding:4px;image-rendering:pixelated}
+.share .st{min-width:0;display:grid;gap:4px}
+.share b{font-size:.92rem;color:var(--ink)}
+.share small{color:var(--muted);font-size:.8rem}
+.share .url{font:500 .78rem/1.35 var(--f-en);color:var(--accent);overflow-wrap:anywhere;user-select:all}
+.share button{justify-self:start;margin-top:4px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);font:inherit;font-size:.8rem;font-weight:600;padding:5px 12px;cursor:pointer}
 .stats dt{order:2;font-size:.8rem;color:var(--muted)}
 .stats dd{order:1;margin:0;font:600 1.15rem/1 var(--f-en);color:var(--ink);font-variant-numeric:tabular-nums}
 .htabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:20px;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:2;background:var(--bg)}
@@ -420,6 +428,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
         <p class="lead" data-t="lead"></p>
         <div class="quick" id="quick"></div>
         <dl class="stats" id="stats"></dl>
+        <div class="share" id="shareHome" hidden></div>
       </div>
       <div class="htabs" role="tablist" id="htabs"></div>
       <div class="hpanel" id="pCats" role="tabpanel"><div id="cats"></div></div>
@@ -455,6 +464,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
       <ol class="tl" id="drawerTl"></ol>
       <button class="dlink" id="nurseLink" type="button"><span data-t="nurse"></span><span id="nurseArrow"></span></button>
       <div class="contact" id="contact"></div>
+      <div class="share" id="shareDrawer" hidden></div>
     </div>
   </aside>
 </div>
@@ -493,7 +503,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
     { id: 'safety', std: 'JCI IPSG.1, IPSG.4, MMU · HA II-6, III-2', title: { th: 'ความปลอดภัยระหว่างรับบริการ', en: 'Safety during your care', ar: 'السلامة أثناء الرعاية' }, topics: ['identify', 'medhistory'] },
     { id: 'diagnosis', std: 'HA III-2 · JCI AOP', title: { th: 'ตรวจวินิจฉัย', en: 'Tests & diagnosis', ar: 'الفحوصات والتشخيص' }, topics: ['imaging', 'whyimaging', 'mriprep', 'scanexp', 'results'] },
     { id: 'treatment', std: 'HA III-3, III-4 · JCI COP', title: { th: 'การรักษา', en: 'Treatment', ar: 'العلاج' }, topics: ['spine', 'decision', 'sciatica', 'mis', 'joint', 'acl', 'osteo'] },
-    { id: 'rehab', std: 'HA III-4 · JCI COP (rehabilitation)', title: { th: 'กายภาพบำบัด', en: 'Physiotherapy', ar: 'العلاج الطبيعي' }, topics: ['physio', 'ptvisit', 'ptprocess', 'ptequip', 'ptprice', 'ptinsurance'] },
+    { id: 'rehab', std: 'HA III-4 · JCI COP (rehabilitation)', title: { th: 'กายภาพบำบัด', en: 'Physiotherapy', ar: 'العلاج الطبيعي' }, topics: ['pthours', 'ptduration', 'ptprice', 'ptshare', 'physio', 'ptvisit', 'ptprocess', 'ptsessions', 'ptinsurance', 'ptequip'] },
     { id: 'surgery', std: 'HA III-4 · JCI ASC, ACC', title: { th: 'ผ่าตัดและนอนโรงพยาบาล', en: 'Surgery & hospital stay', ar: 'الجراحة والتنويم' }, topics: ['preop', 'admission', 'recovery'] },
     { id: 'meds', std: 'JCI MMU, ACC · HA II-6, III-6', title: { th: 'รับยาและนัดครั้งต่อไป', en: 'Medicines & next visit', ar: 'الأدوية والموعد القادم' }, topics: ['pharmacy', 'nextvisit'] },
     { id: 'home', std: 'HA III-5, III-6 · JCI ACC, PCC', title: { th: 'กลับบ้านและติดตามผล', en: 'Going home & follow-up', ar: 'العودة إلى المنزل والمتابعة' }, topics: ['discharge', 'homecare', 'warning'] },
@@ -503,6 +513,9 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
   ];
 
   // kw: [keyword, weight]. Strong topic words weigh 3–5, generic words 1–2.
+  // Words that show a question is about physiotherapy (see `need` on the rehab topics).
+  var PT_WORDS = ['กายภาพ', 'physio', 'physical therap', 'العلاج الطبيعي', 'office syndrome', 'ออฟฟิศซินโดรม', 'คอร์ส', 'course', 'برنامج'];
+
   var INTENTS = [
     // ── 1. Before your visit ─────────────────────────────────────────────
     { id: 'appointment', stage: 'before',
@@ -673,60 +686,98 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
         en: { body: 'Thin bones or osteoporosis usually cause no symptoms at first. A bone mineral density (BMD) test can detect it before a fracture happens.', steps: ['Have a bone mineral density (BMD) test at our hospital', 'If osteoporosis is found, the doctor may prescribe medicine that slows bone loss or helps build new bone', 'Ask the doctor when you should be tested, and book at ' + I] },
         ar: { body: 'لا تسبب هشاشة العظام عادةً أعراضًا في البداية، ويكشف قياس كثافة العظام (BMD) عنها قبل حدوث الكسور.', steps: ['أجروا قياس كثافة العظام (BMD) في المستشفى', 'إذا ثبتت الهشاشة فقد يصف الطبيب أدوية تقلل فقدان العظم أو تحفّز بناء عظم جديد', 'اسألوا الطبيب عن الوقت المناسب للفحص، واحجزوا على ' + IA] }
       } },
-    // ── Physiotherapy (content from the Physiotherapy Department, Nov 2026) ──
+    // ── Physiotherapy: the department's 10 questions, in its own order (SSJ-PT-01…10), Nov 2026 ──
+    // `need`: the topic is only chosen when the question names physiotherapy (or its course),
+    // so general questions such as "MRI ใช้เวลากี่นาที" keep going to their own topics.
+    { id: 'pthours', stage: 'rehab', need: PT_WORDS,
+      title: { th: 'เวลาทำการแผนกกายภาพบำบัด', en: 'Physiotherapy opening hours', ar: 'مواعيد عمل قسم العلاج الطبيعي' },
+      kw: [['กายภาพ', 3], ['physio', 3], ['العلاج الطبيعي', 3], ['กายภาพเปิด', 10], ['เวลากายภาพ', 10], ['กายภาพกี่โมง', 10], ['เวลาทำการกายภาพ', 12], ['เวลาทำการ', 2], ['เคสแรก', 9], ['เคสสุดท้าย', 9], ['รับเคส', 7], ['กี่โมง', 2], ['เปิดทุกวัน', 3], ['เปิดวันไหน', 2], ['เปิดไหม', 1], ['ปิดกี่โมง', 2], ['เปิด', 3], ['วันอาทิตย์', 3], ['วันเสาร์', 3], ['วันหยุด', 3], ['นักขัตฤกษ์', 3], ['opening hours', 2], ['physiotherapy open', 10], ['physio open', 10], ['physiotherapy hours', 10], ['physio hours', 10], ['hours', 1], ['what time', 2], ['open', 1], ['last session', 8], ['مواعيد', 2], ['مواعيد العلاج الطبيعي', 10], ['متى يفتح', 2], ['ساعات العمل', 2]],
+      related: ['ptduration', 'ptvisit', 'ptprice'],
+      a: {
+        th: { body: 'แผนกกายภาพบำบัดเปิดทุกวันค่ะ', steps: ['เคสแรกเริ่มเวลา 09:00 น.', 'รับเคสสุดท้ายเวลา 17:00 น.', 'นัดหมายได้ที่ ' + T] },
+        en: { body: 'The Physiotherapy Department is open every day.', steps: ['The first session starts at 09:00', 'The last session of the day begins at 17:00', 'Book at ' + I] },
+        ar: { body: 'قسم العلاج الطبيعي مفتوح يوميًا.', steps: ['تبدأ أول جلسة الساعة ⁦09:00⁩', 'تبدأ آخر جلسة في اليوم الساعة ⁦17:00⁩', 'للحجز اتصلوا على ' + IA] }
+      } },
+    { id: 'ptduration', stage: 'rehab', need: PT_WORDS,
+      title: { th: 'ระยะเวลาทำกายภาพบำบัดแต่ละครั้ง', en: 'How long a physiotherapy session takes', ar: 'مدة جلسة العلاج الطبيعي' },
+      kw: [['กายภาพ', 3], ['physio', 3], ['العلاج الطبيعي', 3], ['กี่นาที', 4], ['ครั้งละกี่นาที', 12], ['ใช้เวลากี่', 3], ['ใช้เวลานาน', 3], ['ใช้เวลา', 1], ['นานไหม', 2], ['นานแค่ไหน', 2], ['ระยะเวลา', 2], ['how long', 4], ['minutes', 3], ['duration', 3], ['كم دقيقة', 4], ['مدة الجلسة', 6], ['كم تستغرق', 4], ['المدة', 2]],
+      related: ['pthours', 'ptprocess', 'ptprice'],
+      a: {
+        th: { body: 'การตรวจและการรักษาทางกายภาพบำบัดแต่ละครั้งใช้เวลาประมาณ 45–60 นาทีค่ะ', steps: ['แนะนำให้มาก่อนเวลานัดเล็กน้อย', 'สอบถามหรือนัดหมายได้ที่ ' + T] },
+        en: { body: 'Each physiotherapy assessment and treatment session takes about 45–60 minutes.', steps: ['Please arrive a little before your appointment time', 'Ask or book at ' + I] },
+        ar: { body: 'تستغرق كل جلسة تقييم وعلاج طبيعي نحو 45–60 دقيقة.', steps: ['يُفضّل الحضور قبل الموعد بقليل', 'للاستفسار أو الحجز اتصلوا على ' + IA] }
+      } },
+    { id: 'ptprice', stage: 'rehab', need: PT_WORDS, localized: true, // Thai lists prices; EN/AR ask for a quotation until prices for international patients are confirmed
+      title: { th: 'ราคาคอร์สกายภาพบำบัด', en: 'Physiotherapy fees & courses', ar: 'رسوم العلاج الطبيعي والبرامج' },
+      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['ค่ากายภาพ', 12], ['ราคากายภาพ', 12], ['กายภาพราคา', 12], ['กายภาพ ราคา', 12], ['คอร์สกายภาพ', 12], ['คอร์ส', 6], ['โปรแกรมกายภาพ', 10], ['รายครั้ง', 6], ['ครั้งละเท่า', 8], ['ราคา', 2], ['เท่าไหร่', 2], ['เท่าไร', 2], ['กี่บาท', 3], ['ออฟฟิศซินโดรม', 13], ['office syndrome', 13], ['physio price', 12], ['physiotherapy price', 12], ['physiotherapy cost', 12], ['course', 5], ['price', 2], ['cost', 2], ['how much', 2], ['سعر العلاج الطبيعي', 12], ['تكلفة العلاج الطبيعي', 12], ['برنامج', 5], ['سعر', 2], ['كم', 1]],
+      related: ['ptshare', 'ptinsurance', 'ptsessions'],
+      a: {
+        th: { body: 'ราคาคอร์สกายภาพบำบัดค่ะ', steps: ['โปรแกรมกายภาพบำบัดรายครั้ง ราคา 2,500 บาท', 'หากสนใจรักษาต่อเนื่อง มีโปรแกรม Office Syndrome 5 ครั้ง จากราคา 12,500 บาท ลดเหลือ 7,500 บาท (เฉลี่ยครั้งละ 1,500 บาท)', 'โปรแกรม Office Syndrome 10 ครั้ง แถม 2 ครั้ง จากราคา 30,000 บาท ลดเหลือ 15,000 บาท (เฉลี่ยครั้งละ 1,250 บาท)', 'สอบถามรายละเอียดได้ที่ ' + T], note: 'คอร์สเป็นสิทธิ์การรักษาเฉพาะบุคคล ไม่สามารถแบ่งให้ผู้อื่นใช้ได้ ราคาและเงื่อนไขเป็นไปตามที่โรงพยาบาลกำหนดและอาจเปลี่ยนแปลงค่ะ' },
+        en: { body: 'For physiotherapy fees and courses, please ask our Contact Center for a quotation based on your treatment plan.', steps: ['Each assessment and treatment session takes about 45–60 minutes', 'Ask for a quotation at ' + I], note: 'A course is for the named patient only and cannot be shared. Fees and terms are set by the hospital and may change.' },
+        ar: { body: 'لمعرفة رسوم العلاج الطبيعي وبرامجه، يرجى طلب عرض سعر من مركز الاتصال حسب خطة العلاج.', steps: ['تستغرق جلسة التقييم والعلاج نحو 45–60 دقيقة', 'اطلبوا عرض السعر على ' + IA], note: 'البرنامج خاص بالمريض المسجل فقط ولا يمكن مشاركته، وتخضع الرسوم والشروط لما يحدده المستشفى وقد تتغير.' }
+      } },
+    { id: 'ptshare', stage: 'rehab', need: PT_WORDS,
+      title: { th: 'การใช้คอร์สกายภาพบำบัดร่วมกับผู้อื่น', en: 'Can a physiotherapy course be shared?', ar: 'هل يمكن مشاركة برنامج العلاج الطبيعي؟' },
+      kw: [['กายภาพ', 3], ['physio', 3], ['العلاج الطبيعي', 3], ['คอร์สกายภาพ', 12], ['คอร์ส', 6], ['ใช้ร่วมกัน', 12], ['ร่วมกันกับ', 12], ['แบ่งให้', 12], ['แบ่งคอร์ส', 14], ['แบ่งกัน', 12], ['ให้คนอื่นใช้', 12], ['คนอื่นใช้', 7], ['ท่านอื่น', 6], ['โอนคอร์ส', 14], ['โอนสิทธิ์', 12], ['ใช้แทน', 5], ['course', 5], ['share', 5], ['someone else', 5], ['transfer', 3], ['family member', 3], ['use my', 6], ['my wife', 4], ['my husband', 4], ['my mother', 4], ['family', 3], ['ให้แม่', 4], ['ให้พ่อ', 4], ['ให้ภรรยา', 4], ['ให้สามี', 4], ['ให้ลูก', 4], ['برنامج', 5], ['مشاركة', 10], ['شخص آخر', 5], ['نقل', 2]],
+      related: ['ptprice', 'ptsessions', 'ptinsurance'],
+      a: {
+        th: { body: 'คอร์สกายภาพบำบัดเป็นสิทธิ์การรักษาเฉพาะบุคคล จึงไม่สามารถแบ่งให้ผู้อื่นใช้ได้ค่ะ', steps: ['หากผู้อื่นต้องการรับบริการ สามารถเริ่มจากพบแพทย์เพื่อประเมินอาการก่อนได้', 'สอบถามเพิ่มเติมได้ที่ ' + T] },
+        en: { body: 'A physiotherapy course is a personal treatment entitlement, so it cannot be shared with or used by another person.', steps: ['If someone else would like physiotherapy, they can start by seeing a doctor for an assessment', 'For more information, call ' + I] },
+        ar: { body: 'برنامج العلاج الطبيعي حق علاجي شخصي، لذا لا يمكن مشاركته أو استخدامه من قِبل شخص آخر.', steps: ['إذا رغب شخص آخر في العلاج الطبيعي، يمكنه البدء بمقابلة الطبيب للتقييم', 'لمزيد من المعلومات اتصلوا على ' + IA] }
+      } },
     { id: 'physio', stage: 'rehab',
       title: { th: 'บริการของแผนกกายภาพบำบัด', en: 'Physiotherapy services', ar: 'خدمات العلاج الطبيعي' },
-      kw: [['กายภาพ', 5], ['ฟื้นฟู', 4], ['บริหาร', 3], ['ออกกำลัง', 3], ['นวดแผนไทย', 8], ['นวด', 5], ['สมรรถภาพ', 6], ['นักวิทยาศาสตร์การกีฬา', 7], ['physio', 5], ['physical therapy', 5], ['rehab', 5], ['exercise', 3], ['thai massage', 8], ['massage', 5], ['fitness', 5], ['العلاج الطبيعي', 5], ['تأهيل', 5], ['تمارين', 3], ['تدليك', 6], ['اللياقة', 5]],
+      kw: [['กายภาพ', 5], ['ฟื้นฟู', 4], ['บริหาร', 3], ['ออกกำลัง', 3], ['นวดแผนไทย', 8], ['นวด', 5], ['สมรรถภาพ', 6], ['นักวิทยาศาสตร์การกีฬา', 7], ['บริการอะไร', 5], ['มีบริการ', 4], ['physio', 5], ['physical therapy', 5], ['rehab', 5], ['exercise', 3], ['thai massage', 8], ['massage', 5], ['fitness', 5], ['services', 3], ['العلاج الطبيعي', 5], ['تأهيل', 5], ['تمارين', 3], ['تدليك', 6], ['اللياقة', 5]],
       related: ['ptvisit', 'ptprice', 'ptprocess'],
       a: {
-        th: { body: 'แผนกกายภาพบำบัดให้บริการ 3 ด้านค่ะ', steps: ['กายภาพบำบัด (Physical Therapy): ตรวจประเมิน วางแผนการรักษา และฟื้นฟูความผิดปกติของระบบกระดูก กล้ามเนื้อ ข้อต่อ และระบบประสาท โดยนักกายภาพบำบัด', 'นวดแผนไทย (Thai Traditional Massage): ช่วยผ่อนคลายกล้ามเนื้อ ลดความตึงตัว และส่งเสริมการผ่อนคลายของร่างกาย', 'การออกกำลังกายเพื่อเสริมสร้างสมรรถภาพทางกาย (Exercise & Physical Fitness): ออกแบบโปรแกรมโดยนักวิทยาศาสตร์การกีฬา เพื่อพัฒนาความแข็งแรง ความทนทาน ความยืดหยุ่น การทรงตัว และสมรรถภาพทางกายโดยรวม', 'สอบถามหรือนัดหมายได้ที่ ' + T] },
+        th: { body: 'แผนกกายภาพบำบัดให้บริการ 3 ด้านค่ะ', steps: ['กายภาพบำบัด (Physical Therapy): ตรวจประเมิน วางแผนการรักษา และฟื้นฟูความผิดปกติของระบบกระดูก กล้ามเนื้อ ข้อต่อ และระบบประสาท โดยนักกายภาพบำบัด', 'นวดแผนไทย (Thai Traditional Massage): นวดเพื่อผ่อนคลายกล้ามเนื้อ ลดความตึงตัว และส่งเสริมการผ่อนคลายของร่างกาย', 'การออกกำลังกายเพื่อเสริมสร้างสมรรถภาพทางกาย (Exercise & Physical Fitness): ออกแบบโปรแกรมโดยนักวิทยาศาสตร์การกีฬา เพื่อพัฒนาความแข็งแรง ความทนทาน ความยืดหยุ่น การทรงตัว และสมรรถภาพทางกายโดยรวม', 'สอบถามหรือนัดหมายได้ที่ ' + T] },
         en: { body: 'Our Physiotherapy Department offers three services.', steps: ['Physical therapy: assessment, a treatment plan and rehabilitation for problems of the bones, muscles, joints and nervous system, by our physical therapists', 'Thai traditional massage: relaxes the muscles, reduces tension and helps the body relax', 'Exercise & physical fitness: a programme designed by a sports scientist to improve strength, endurance, flexibility, balance and overall fitness', 'Ask or book at ' + I] },
         ar: { body: 'يقدم قسم العلاج الطبيعي ثلاث خدمات.', steps: ['العلاج الطبيعي: تقييم الحالة ووضع خطة علاج وإعادة تأهيل لمشكلات العظام والعضلات والمفاصل والجهاز العصبي على يد أخصائيي العلاج الطبيعي', 'التدليك التايلاندي التقليدي: يريح العضلات ويخفف الشد ويساعد الجسم على الاسترخاء', 'التمارين واللياقة البدنية: برنامج يصممه أخصائي علوم الرياضة لتحسين القوة والتحمل والمرونة والتوازن واللياقة العامة', 'للاستفسار أو الحجز اتصلوا على ' + IA] }
       } },
-    { id: 'ptvisit', stage: 'rehab',
-      title: { th: 'เวลาทำการและขั้นตอนเข้ารับกายภาพ', en: 'Physiotherapy hours & how to start', ar: 'مواعيد العلاج الطبيعي وكيفية البدء' },
-      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['กายภาพเปิด', 9], ['เวลากายภาพ', 9], ['กายภาพกี่โมง', 9], ['เคสแรก', 8], ['เคสสุดท้าย', 8], ['กี่โมง', 3], ['เปิดทุกวัน', 4], ['กี่นาที', 4], ['ใช้เวลา', 3], ['นานไหม', 3], ['พบแพทย์ก่อน', 8], ['ต้องพบหมอก่อน', 8], ['ส่งปรึกษา', 7], ['consult', 4], ['ครั้งแรก', 3], ['ครั้งต่อไป', 4], ['นัดกายภาพ', 9], ['จองกายภาพ', 9], ['hours', 3], ['how long', 4], ['minutes', 3], ['see a doctor first', 8], ['referral', 5], ['book', 2], ['first time', 3], ['مواعيد', 4], ['مدة الجلسة', 8], ['كم دقيقة', 6], ['الطبيب أولا', 7], ['إحالة', 5]],
-      related: ['physio', 'ptprice', 'ptprocess'],
+    { id: 'ptvisit', stage: 'rehab', need: PT_WORDS,
+      title: { th: 'ขั้นตอนการเข้ารับบริการกายภาพบำบัด', en: 'How to start physiotherapy', ar: 'خطوات الحصول على العلاج الطبيعي' },
+      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['ขั้นตอนการเข้ารับบริการ', 12], ['เข้ารับบริการ', 2], ['พบแพทย์ก่อน', 6], ['พบหมอก่อน', 6], ['ต้องพบแพทย์', 4], ['ต้องพบหมอ', 4], ['ไม่ต้องพบแพทย์', 5], ['ไม่ต้องพบหมอ', 5], ['ส่งปรึกษา', 5], ['ใบส่งตัว', 4], ['consult', 3], ['ครั้งแรก', 3], ['ครั้งต่อไป', 5], ['ครั้งถัดไป', 5], ['นัดกายภาพ', 9], ['จองกายภาพ', 9], ['walk in', 3], ['see a doctor', 5], ['referral', 4], ['first time', 3], ['next visit', 5], ['book', 2], ['الطبيب أولا', 6], ['الطبيب أولاً', 6], ['إحالة', 4], ['الزيارة الأولى', 5]],
+      related: ['pthours', 'ptprocess', 'physio'],
       a: {
-        th: { body: 'แผนกกายภาพบำบัดเปิดทุกวัน เริ่มเคสแรก 09:00 น. และรับเคสสุดท้าย 17:00 น. ค่ะ', steps: ['ครั้งแรก: พบแพทย์เพื่อประเมินอาการและรับการส่งปรึกษา (Consult) ก่อนเข้ารับบริการกายภาพบำบัด', 'ครั้งถัดไป: ติดต่อแผนกกายภาพบำบัดได้โดยตรงตามวันและเวลานัด ไม่ต้องพบแพทย์ซ้ำ เว้นแต่มีข้อบ่งชี้ทางการแพทย์', 'การตรวจและการรักษาแต่ละครั้งใช้เวลาประมาณ 45–60 นาที', 'นัดหมายได้ที่ ' + T] },
-        en: { body: 'The Physiotherapy Department is open every day. The first session starts at 09:00 and the last session begins at 17:00.', steps: ['First visit: see a doctor, who assesses your symptoms and refers you (consult) to physiotherapy', 'Later visits: contact the Physiotherapy Department directly for your booked day and time; you do not need to see the doctor again unless there is a medical reason', 'Each assessment and treatment session takes about 45–60 minutes', 'Book at ' + I] },
-        ar: { body: 'قسم العلاج الطبيعي مفتوح يوميًا، تبدأ أول جلسة الساعة ⁦09:00⁩ وتبدأ آخر جلسة الساعة ⁦17:00⁩.', steps: ['الزيارة الأولى: مقابلة الطبيب لتقييم الأعراض والحصول على إحالة إلى العلاج الطبيعي', 'الزيارات التالية: تواصلوا مع قسم العلاج الطبيعي مباشرة حسب الموعد، دون الحاجة إلى مقابلة الطبيب مجددًا إلا لسبب طبي', 'تستغرق جلسة التقييم والعلاج نحو 45–60 دقيقة', 'للحجز اتصلوا على ' + IA] }
+        th: { body: 'ขั้นตอนการเข้ารับบริการแผนกกายภาพบำบัดค่ะ', steps: ['ครั้งแรก: ผู้ป่วยต้องพบแพทย์เพื่อประเมินอาการและรับการส่งปรึกษา (Consult) ก่อนเข้ารับบริการกายภาพบำบัด', 'ครั้งถัดไป: ติดต่อแผนกกายภาพบำบัดได้โดยตรงตามวันและเวลานัดหมาย โดยไม่จำเป็นต้องพบแพทย์ซ้ำ เว้นแต่มีข้อบ่งชี้ทางการแพทย์', 'นัดหมายได้ที่ ' + T] },
+        en: { body: 'How to start physiotherapy with us:', steps: ['First visit: see a doctor, who assesses your symptoms and refers you (consult) to physiotherapy', 'Later visits: contact the Physiotherapy Department directly for your booked day and time; you do not need to see the doctor again unless there is a medical reason', 'Book at ' + I] },
+        ar: { body: 'خطوات الحصول على خدمة العلاج الطبيعي:', steps: ['الزيارة الأولى: مقابلة الطبيب لتقييم الأعراض والحصول على إحالة إلى العلاج الطبيعي', 'الزيارات التالية: تواصلوا مع قسم العلاج الطبيعي مباشرة حسب الموعد، دون الحاجة إلى مقابلة الطبيب مجددًا إلا لسبب طبي', 'للحجز اتصلوا على ' + IA] }
       } },
-    { id: 'ptprocess', stage: 'rehab',
-      title: { th: 'ขั้นตอนการรักษาทางกายภาพบำบัด', en: 'What happens in physiotherapy', ar: 'مراحل جلسة العلاج الطبيعي' },
-      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['ขั้นตอนการรักษา', 7], ['ขั้นตอนกายภาพ', 10], ['ทำอะไรบ้าง', 5], ['กี่ครั้ง', 6], ['หายไหม', 3], ['เห็นผล', 8], ['ได้ผล', 5], ['ยืดกล้ามเนื้อ', 6], ['การบำบัดด้วยมือ', 7], ['how many sessions', 9], ['what happens', 6], ['see results', 8], ['steps', 3], ['كم جلسة', 9], ['ماذا يحدث', 6], ['النتائج', 5]],
-      related: ['ptequip', 'ptvisit', 'ptprice'],
+    { id: 'ptprocess', stage: 'rehab', need: PT_WORDS,
+      title: { th: 'ขั้นตอนการรักษาทางกายภาพบำบัด', en: 'What happens in physiotherapy', ar: 'مراحل العلاج الطبيعي' },
+      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['ขั้นตอนการรักษา', 6], ['ขั้นตอนกายภาพ', 10], ['รักษาอย่างไร', 2], ['รักษายังไง', 2], ['ทำอะไรบ้าง', 2], ['ซักประวัติ', 3], ['การบำบัดด้วยมือ', 8], ['กดคลาย', 7], ['ยืดกล้ามเนื้อ', 6], ['what happens', 3], ['treatment steps', 8], ['manual therapy', 8], ['ماذا يحدث', 3], ['مراحل العلاج', 8], ['العلاج اليدوي', 7]],
+      related: ['ptequip', 'ptsessions', 'ptduration'],
       a: {
-        th: { body: 'การรักษาทางกายภาพบำบัดมีขั้นตอนดังนี้ค่ะ', steps: ['ซักประวัติและตรวจประเมินอาการ', 'วางแผนการรักษาทางกายภาพบำบัด', 'รักษาด้วยเครื่องมือกายภาพบำบัด เช่น PMS, Shockwave, Ultrasound, High power laser therapy, เครื่องดึงหลัง/ดึงคอ (Traction) และการกระตุ้นไฟฟ้าลดอาการปวด', 'บำบัดด้วยมือ เช่น การกดคลายกล้ามเนื้อ และการขยับข้อเพื่อเพิ่มช่วงการเคลื่อนไหว', 'แนะนำการยืดกล้ามเนื้อ และการออกกำลังกายเพื่อเพิ่มความแข็งแรงของกล้ามเนื้ออย่างเหมาะสม'], note: 'จำนวนครั้งที่ต้องรักษาจนเริ่มเห็นผลขึ้นกับลักษณะอาการ ความรุนแรง และสภาพร่างกายของแต่ละคน นักกายภาพบำบัดจะประเมินและติดตามผลเป็นระยะ เพื่อปรับแผนการรักษาให้เหมาะสมกับแต่ละท่านค่ะ' },
-        en: { body: 'Physiotherapy treatment follows these steps.', steps: ['History taking and assessment of your symptoms', 'A physiotherapy treatment plan', 'Treatment with physiotherapy equipment such as PMS, shockwave, ultrasound, high-power laser therapy, neck/back traction and electrical stimulation for pain relief', 'Manual therapy, such as releasing tight muscles and joint mobilisation to improve range of movement', 'Advice on stretching and suitable exercises to strengthen your muscles'], note: 'How many sessions you need before you see results depends on your symptoms, how severe they are and your overall condition. Your physical therapist assesses your progress regularly and adjusts the plan for you.' },
-        ar: { body: 'يمر العلاج الطبيعي بالمراحل التالية.', steps: ['أخذ التاريخ المرضي وتقييم الأعراض', 'وضع خطة العلاج الطبيعي', 'العلاج بأجهزة العلاج الطبيعي مثل PMS والموجات الصادمة والموجات فوق الصوتية والليزر عالي الطاقة وجهاز شد الرقبة والظهر والتحفيز الكهربائي لتخفيف الألم', 'العلاج اليدوي مثل إرخاء العضلات المشدودة وتحريك المفاصل لزيادة مدى الحركة', 'إرشادات لتمارين الإطالة وتمارين مناسبة لتقوية العضلات'], note: 'يعتمد عدد الجلسات اللازمة لظهور النتائج على طبيعة الأعراض وشدتها والحالة الصحية لكل شخص، ويقيّم أخصائي العلاج الطبيعي التقدم بانتظام ويعدّل الخطة بما يناسبكم.' }
+        th: { body: 'การรักษาทางกายภาพบำบัดมี 5 ขั้นตอนค่ะ', steps: ['ซักประวัติ และตรวจประเมินอาการ', 'วางแผนการรักษาทางกายภาพบำบัด', 'รักษาด้วยเครื่องมือกายภาพบำบัด เช่น PMS, Shockwave, Ultrasound, High power laser therapy, เครื่องดึงหลัง/ดึงคอ (Traction machine) และการกระตุ้นไฟฟ้าลดอาการปวด', 'บำบัดด้วยมือ เช่น การกดคลายกล้ามเนื้อ การขยับข้อเพื่อเพิ่มช่วงการเคลื่อนไหว', 'แนะนำการยืดกล้ามเนื้อ และการออกกำลังกายเพื่อเพิ่มความแข็งแรงกล้ามเนื้ออย่างเหมาะสม'] },
+        en: { body: 'Physiotherapy treatment has five steps.', steps: ['History taking and assessment of your symptoms', 'A physiotherapy treatment plan', 'Treatment with physiotherapy equipment such as PMS, shockwave, ultrasound, high-power laser therapy, neck/back traction and electrical stimulation for pain relief', 'Manual therapy, such as releasing tight muscles and joint mobilisation to improve range of movement', 'Advice on stretching and suitable exercises to strengthen your muscles'] },
+        ar: { body: 'يمر العلاج الطبيعي بخمس مراحل.', steps: ['أخذ التاريخ المرضي وتقييم الأعراض', 'وضع خطة العلاج الطبيعي', 'العلاج بأجهزة العلاج الطبيعي مثل PMS والموجات الصادمة والموجات فوق الصوتية والليزر عالي الطاقة وجهاز شد الرقبة والظهر والتحفيز الكهربائي لتخفيف الألم', 'العلاج اليدوي مثل إرخاء العضلات المشدودة وتحريك المفاصل لزيادة مدى الحركة', 'إرشادات لتمارين الإطالة وتمارين مناسبة لتقوية العضلات'] }
+      } },
+    { id: 'ptsessions', stage: 'rehab', need: PT_WORDS,
+      title: { th: 'จำนวนครั้งที่ต้องทำกายภาพจึงจะเห็นผล', en: 'How many sessions before I see results?', ar: 'كم جلسة حتى تظهر النتائج؟' },
+      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['กี่ครั้ง', 5], ['เห็นผล', 5], ['ได้ผล', 3], ['ต้องทำนาน', 3], ['ทำไปเรื่อยๆ', 2], ['how many sessions', 7], ['see results', 5], ['results', 2], ['how many times', 4], ['كم جلسة', 7], ['النتائج', 3], ['تظهر', 1]],
+      related: ['ptprocess', 'ptprice', 'ptshare'],
+      a: {
+        th: { body: 'จำนวนครั้งในการรักษาขึ้นอยู่กับลักษณะอาการ ความรุนแรงของปัญหา และสภาพร่างกายของแต่ละบุคคลค่ะ', steps: ['นักกายภาพบำบัดจะประเมินและติดตามผลการรักษาเป็นระยะ', 'ปรับแผนการรักษาให้เหมาะสมกับผู้ป่วยแต่ละราย', 'สอบถามเพิ่มเติมได้ที่ ' + T] },
+        en: { body: 'The number of sessions depends on your symptoms, how severe the problem is and your overall physical condition.', steps: ['Your physical therapist reviews your progress regularly', 'The treatment plan is adjusted to suit you', 'For more information, call ' + I] },
+        ar: { body: 'يعتمد عدد الجلسات على طبيعة الأعراض وشدة المشكلة والحالة البدنية لكل شخص.', steps: ['يتابع أخصائي العلاج الطبيعي التقدم ويقيّمه بانتظام', 'تُعدَّل خطة العلاج بما يناسب كل مريض', 'لمزيد من المعلومات اتصلوا على ' + IA] }
+      } },
+    { id: 'ptinsurance', stage: 'rehab', need: PT_WORDS,
+      title: { th: 'เบิกประกันค่ารักษาทางกายภาพบำบัด', en: 'Insurance for physiotherapy', ar: 'التأمين على العلاج الطبيعي' },
+      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['ประกัน', 3], ['เบิก', 3], ['เคลม', 3], ['opd', 2], ['เบิกกายภาพ', 12], ['เบิกค่ากายภาพ', 14], ['ประกันค่ากายภาพ', 14], ['ประกันกายภาพ', 12], ['เคลมกายภาพ', 12], ['เคลมค่ากายภาพ', 14], ['กายภาพเบิก', 12], ['เบิกได้', 4], ['insurance', 3], ['claim', 3], ['cover', 2], ['تأمين', 3], ['التأمين', 3]],
+      related: ['ptprice', 'insurance', 'ptvisit'],
+      a: {
+        th: { body: 'ค่ารักษาทางกายภาพบำบัดเบิกจากประกันสุขภาพแบบผู้ป่วยนอก (OPD) ได้ค่ะ ทั้งนี้ขึ้นอยู่กับเงื่อนไข ความคุ้มครอง และวงเงินผลประโยชน์ตามกรมธรรม์ของแต่ละบริษัทประกัน', steps: ['แนะนำให้ตรวจสอบสิทธิความคุ้มครองกับบริษัทประกันก่อนเข้ารับบริการ', 'สอบถามเพิ่มเติมได้ที่ ' + T] },
+        en: { body: 'Physiotherapy can be claimed under outpatient (OPD) health insurance, depending on the conditions, coverage and benefit limits of your policy.', steps: ['Please check your coverage with your insurance company before your session', 'For more information, call ' + I] },
+        ar: { body: 'يمكن المطالبة بتكاليف العلاج الطبيعي ضمن تأمين العيادات الخارجية (OPD)، حسب شروط الوثيقة وتغطيتها وحدود المنافع.', steps: ['يرجى التحقق من التغطية مع شركة التأمين قبل الجلسة', 'لمزيد من المعلومات اتصلوا على ' + IA] }
       } },
     { id: 'ptequip', stage: 'rehab',
-      title: { th: 'เครื่องมือกายภาพบำบัด', en: 'Physiotherapy equipment', ar: 'أجهزة العلاج الطبيعي' },
+      title: { th: 'เครื่องมือกายภาพบำบัดและผลการรักษา', en: 'Physiotherapy equipment & what it does', ar: 'أجهزة العلاج الطبيعي وفوائدها' },
       kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['เครื่องมือกายภาพ', 10], ['เครื่องมือ', 4], ['เครื่อง', 2], ['shockwave', 9], ['ช็อคเวฟ', 9], ['ช็อกเวฟ', 9], ['คลื่นกระแทก', 9], ['pms', 8], ['สนามแม่เหล็ก', 8], ['ultrasound', 6], ['อัลตราซาวด์', 6], ['เลเซอร์กายภาพ', 10], ['high power laser', 9], ['laser therapy', 8], ['traction', 8], ['ดึงหลัง', 9], ['ดึงคอ', 9], ['รองช้ำ', 7], ['เอ็นอักเสบ', 6], ['กระตุ้นไฟฟ้า', 7], ['equipment', 5], ['machine', 4], ['plantar', 6], ['tendinitis', 6], ['الموجات الصادمة', 9], ['ليزر', 4], ['شد الظهر', 8], ['شد الرقبة', 8], ['أجهزة', 4]],
-      related: ['ptprocess', 'physio', 'ptvisit'],
+      related: ['ptprocess', 'ptsessions', 'physio'],
       a: {
         th: { body: 'เครื่องมือกายภาพบำบัดและผลการรักษามีดังนี้ค่ะ', steps: ['PMS (Peripheral Magnetic Stimulation): กระตุ้นด้วยสนามแม่เหล็ก ช่วยกระตุ้นการทำงานของกล้ามเนื้อและเส้นประสาท และช่วยบรรเทาอาการปวด', 'Shockwave Therapy: ส่งคลื่นกระแทกไปยังบริเวณที่มีอาการ ช่วยกระตุ้นการซ่อมแซมเนื้อเยื่อ เหมาะกับอาการปวดกล้ามเนื้อหรือเอ็นเรื้อรังบางชนิด เช่น รองช้ำ หรือเอ็นอักเสบ', 'Ultrasound Therapy: คลื่นเสียงความถี่สูง ช่วยบรรเทาอาการปวดและลดความตึงตัวของกล้ามเนื้อ', 'Laser Therapy: ช่วยบรรเทาอาการปวด ลดการอักเสบ และส่งเสริมการฟื้นฟูเนื้อเยื่อ', 'Traction Therapy: ช่วยลดแรงกดบริเวณกระดูกสันหลังและเส้นประสาท ช่วยบรรเทาอาการปวดคอหรือปวดหลังในผู้ป่วยบางราย'], note: 'การเลือกใช้เครื่องมือขึ้นกับอาการและการประเมินของนักกายภาพบำบัด เพื่อให้เหมาะสมและปลอดภัยกับผู้ป่วยแต่ละรายค่ะ' },
         en: { body: 'Our physiotherapy equipment and what it does:', steps: ['PMS (peripheral magnetic stimulation): stimulates muscles and nerves with a magnetic field and helps relieve pain', 'Shockwave therapy: sends shock waves to the painful area to stimulate tissue repair; suited to some chronic muscle or tendon pain, such as plantar fasciitis or tendinitis', 'Ultrasound therapy: high-frequency sound waves that relieve pain and reduce muscle tension', 'Laser therapy: relieves pain, reduces inflammation and supports tissue healing', 'Traction therapy: reduces pressure on the spine and nerves and can relieve neck or back pain in some patients'], note: 'The physical therapist chooses the equipment based on your symptoms and assessment, so that it is suitable and safe for you.' },
         ar: { body: 'أجهزة العلاج الطبيعي وفوائدها:', steps: ['PMS (التحفيز المغناطيسي الطرفي): يحفّز العضلات والأعصاب بمجال مغناطيسي ويساعد على تخفيف الألم', 'العلاج بالموجات الصادمة: يرسل موجات إلى موضع الألم لتحفيز إصلاح الأنسجة، ويناسب بعض آلام العضلات أو الأوتار المزمنة مثل التهاب اللفافة الأخمصية أو التهاب الأوتار', 'العلاج بالموجات فوق الصوتية: موجات عالية التردد تخفف الألم وتقلل شد العضلات', 'العلاج بالليزر: يخفف الألم ويقلل الالتهاب ويدعم التئام الأنسجة', 'العلاج بالشد: يخفف الضغط على العمود الفقري والأعصاب، وقد يخفف آلام الرقبة أو الظهر لدى بعض المرضى'], note: 'يختار أخصائي العلاج الطبيعي الجهاز وفق الأعراض والتقييم، بما يناسب كل مريض ويضمن سلامته.' }
-      } },
-    { id: 'ptprice', stage: 'rehab', localized: true, // Thai lists prices; EN/AR ask for a quotation (prices for international patients not confirmed)
-      title: { th: 'ค่าบริการและคอร์สกายภาพบำบัด', en: 'Physiotherapy fees & courses', ar: 'رسوم العلاج الطبيعي والبرامج' },
-      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['ค่ากายภาพ', 12], ['ราคากายภาพ', 12], ['กายภาพราคา', 12], ['กายภาพ ราคา', 12], ['คอร์สกายภาพ', 12], ['คอร์ส', 6], ['โปรแกรมกายภาพ', 10], ['ครั้งละ', 4], ['ราคา', 2], ['เท่าไหร่', 2], ['เท่าไร', 2], ['กี่บาท', 3], ['ออฟฟิศซินโดรม', 13], ['office syndrome', 13], ['ใช้ร่วมกัน', 9], ['แบ่งให้', 9], ['ให้คนอื่นใช้', 9], ['physio price', 12], ['physiotherapy price', 12], ['physiotherapy cost', 12], ['course', 5], ['package', 2], ['share', 5], ['price', 2], ['cost', 2], ['how much', 2], ['سعر العلاج الطبيعي', 12], ['تكلفة العلاج الطبيعي', 12], ['برنامج', 5], ['مشاركة', 5], ['سعر', 2], ['كم', 1]],
-      related: ['ptinsurance', 'ptvisit', 'physio'],
-      a: {
-        th: { body: 'ค่าบริการกายภาพบำบัดค่ะ', steps: ['โปรแกรมกายภาพบำบัดรายครั้ง 2,500 บาท', 'ถ้าต้องการรักษาต่อเนื่อง มีโปรแกรม Office Syndrome 5 ครั้ง 7,500 บาท (ปกติ 12,500 บาท เฉลี่ยครั้งละ 1,500 บาท)', 'โปรแกรม Office Syndrome 10 ครั้ง แถม 2 ครั้ง 15,000 บาท (ปกติ 30,000 บาท เฉลี่ยครั้งละ 1,250 บาท)', 'คอร์สกายภาพบำบัดเป็นสิทธิ์การรักษาเฉพาะบุคคล ไม่สามารถแบ่งให้ผู้อื่นใช้ได้', 'สอบถามรายละเอียดได้ที่ ' + T], note: 'ราคาและเงื่อนไขเป็นไปตามที่โรงพยาบาลกำหนดและอาจเปลี่ยนแปลง กรุณาสอบถามก่อนตัดสินใจค่ะ' },
-        en: { body: 'For physiotherapy fees and courses, please ask our Contact Center for a quotation based on your treatment plan.', steps: ['Each assessment and treatment session takes about 45–60 minutes', 'A physiotherapy course is for the named patient only and cannot be shared with another person', 'Ask for a quotation at ' + I], note: 'Fees and terms are set by the hospital and may change. Please ask before deciding.' },
-        ar: { body: 'لمعرفة رسوم العلاج الطبيعي وبرامجه، يرجى طلب عرض سعر من مركز الاتصال حسب خطة العلاج.', steps: ['تستغرق جلسة التقييم والعلاج نحو 45–60 دقيقة', 'برنامج العلاج الطبيعي خاص بالمريض المسجل فقط ولا يمكن مشاركته مع شخص آخر', 'اطلبوا عرض السعر على ' + IA], note: 'تخضع الرسوم والشروط لما يحدده المستشفى وقد تتغير، يرجى الاستفسار قبل اتخاذ القرار.' }
-      } },
-    { id: 'ptinsurance', stage: 'rehab',
-      title: { th: 'เบิกประกันค่ากายภาพบำบัด', en: 'Insurance for physiotherapy', ar: 'التأمين على العلاج الطبيعي' },
-      kw: [['กายภาพ', 3], ['physio', 3], ['physiotherapy', 3], ['العلاج الطبيعي', 3], ['ประกัน', 3], ['เบิก', 3], ['เคลม', 3], ['opd', 2], ['เบิกกายภาพ', 12], ['เบิกค่ากายภาพ', 14], ['ประกันค่ากายภาพ', 14], ['ประกันกายภาพ', 12], ['เคลมกายภาพ', 12], ['เคลมค่ากายภาพ', 14], ['กายภาพเบิก', 12], ['เบิกได้', 4], ['insurance', 3], ['claim', 3], ['cover', 2], ['تأمين', 3], ['التأمين', 3]],
-      related: ['ptprice', 'insurance', 'ptvisit'],
-      a: {
-        th: { body: 'ค่ากายภาพบำบัดเบิกประกันสุขภาพแบบผู้ป่วยนอก (OPD) ได้ค่ะ ทั้งนี้ขึ้นกับเงื่อนไข ความคุ้มครอง และวงเงินตามกรมธรรม์ของแต่ละบริษัทประกัน', steps: ['แนะนำให้ตรวจสอบสิทธิความคุ้มครองกับบริษัทประกันก่อนเข้ารับบริการ', 'สอบถามเพิ่มเติมได้ที่ ' + T] },
-        en: { body: 'Physiotherapy can be claimed under outpatient (OPD) health insurance, depending on the conditions, coverage and benefit limits of your policy.', steps: ['Please check your coverage with your insurance company before your session', 'For more information, call ' + I] },
-        ar: { body: 'يمكن المطالبة بتكاليف العلاج الطبيعي ضمن تأمين العيادات الخارجية (OPD)، حسب شروط الوثيقة وتغطيتها وحدود المنافع.', steps: ['يرجى التحقق من التغطية مع شركة التأمين قبل الجلسة', 'لمزيد من المعلومات اتصلوا على ' + IA] }
       } },
 
     // ── 5. Surgery & hospital stay ───────────────────────────────────────
@@ -1053,6 +1104,12 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
     return null;
   }
 
+  function needs(text, words) {
+    var t = text.toLowerCase();
+    for (var i = 0; i < words.length; i++) if (t.indexOf(words[i]) !== -1) return true;
+    return false;
+  }
+
   function scoreKw(text, kw) {
     var t = ' ' + text.toLowerCase() + ' ';
     var s = 0;
@@ -1080,6 +1137,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
     for (var r = 0; r < RED_FLAGS.length; r++) if (RED_FLAGS[r].test(msg)) return { type: 'emergency', lang: lang, pii: pii, score: 99 };
     var best = null, bestScore = 0;
     for (var i = 0; i < INTENTS.length; i++) {
+      if (INTENTS[i].need && !needs(msg, INTENTS[i].need)) continue;
       var sc = scoreKw(msg, INTENTS[i].kw);
       if (sc > bestScore) { bestScore = sc; best = INTENTS[i]; }
     }
@@ -1323,6 +1381,8 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
   var SELF=null;
   // Staff page: asks the viewer for nothing (no sign-in, database or AI), so it opens anywhere.
   var STAFF=true;
+  // Chatbot link and its QR image, filled in at build time from config/site.json.
+  var WEBLINK="https://ssjhospital.github.io/ssj-staff-chat/", QRIMG="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUgAAAFICAYAAAAyFGczAAAAAklEQVR4AewaftIAAAleSURBVO3BQXIEB44EwUgY///lXN0HwmHLyrpJhXv6DyRJ/2OQJK0GSdJqkCStBknSapAkrQZJ0mqQJK0GSdJqkCStBknSapAkrQZJ0mqQJK0GSdJqkCStBknSapAkrQZJ0mqQJK0GSdJqkCStBknSapAkrQZJ0mqQJK0GSdJqkCStBknSapAkrQZJ0mqQJK1++LAk/GVteVMSLm35y5LwprZckvBEW55Iwl/Wlk8aJEmrQZK0GiRJq0GStBokSatBkrQaJEmrH75cW75ZEt6UhEtbLkl4oi1PJOGJtjzRlksS3tSWT2rLN0vCNxskSatBkrQaJEmrQZK0GiRJq0GStBokSasffrkkvKktb0rCpS3fLAmXtlyS8ERbLkl4IglPJOHSlk9Kwpva8psNkqTVIElaDZKk1SBJWg2SpNUgSVoNkqTVD/pqSXhTW55oyxNteSIJl7Y8kYRLWy5JuCTh0hZ9ziBJWg2SpNUgSVoNkqTVIElaDZKk1SBJWv2gP60tlyT8Zm15IgnSvxkkSatBkrQaJEmrQZK0GiRJq0GStBokSasffrm2/GVteVNbLkl4oi1vSsITbXlTWy5J+KS26N8NkqTVIElaDZKk1SBJWg2SpNUgSVoNkqTVD18uCfp3Sbi05ZKES1suSXgiCZe2PNGWSxIubbkk4dKWT0qC/v8GSdJqkCStBknSapAkrQZJ0mqQJK0GSdLqhw9ri/7/2vJEW36ztlyS8EQS3tSWJ9qi9wySpNUgSVoNkqTVIElaDZKk1SBJWg2SpNUPH5aES1suSfhmbbm05ZKEJ9ryRBLe1JZLEi5teaItTyThiSRc2nJJwjdry282SJJWgyRpNUiSVoMkaTVIklaDJGk1SJJWP/zHteVNSXhTWy5J+GZJ+KQkXNryRBIubfmktlyS8KYkXNrySYMkaTVIklaDJGk1SJJWgyRpNUiSVoMkafXDh7XlkoQ3JeGT2nJJwm+WhE9qyye15ZKEJ9ryRBIubbkk4Ym2fLNBkrQaJEmrQZK0GiRJq0GStBokSatBkrT64cOScGnLJQmXtnyzJFzacknCJ7XlkoRLWy5JuCThTW25tOVNbbkk4dKWJ5LwpiRc2vJJgyRpNUiSVoMkaTVIklaDJGk1SJJWgyRp9cOXS8KlLU8k4ZPa8kRbLkl4oi2XJFzacknCpS1PJOGJJLypLU+05ZKEN7XlLxskSatBkrQaJEmrQZK0GiRJq0GStBokSasfvlxb3tSWNyXhTUl4oi1PtOWShEtbnkjCpS1PJOHSlksS3pSES1ueSMITSfjNBknSapAkrQZJ0mqQJK0GSdJqkCStBknSKv0H+ldJeKItTyTh0pY3JeHSlksSnmjLm5LwRFvelIS/rC3fbJAkrQZJ0mqQJK0GSdJqkCStBknSapAkrX74sCS8qS2XJFza8kQSnmjLJQmXtlyS8ElteSIJl7Zc2nJJwpuS8Ka2PJGEJ9rymw2SpNUgSVoNkqTVIElaDZKk1SBJWg2SpNUPv1xbnmjLE0l4oi2/WRLelIRLW97UlksSLm15U1suSXhTW55IwqUtnzRIklaDJGk1SJJWgyRpNUiSVoMkaTVIklY/fLm2XJJwacsTSbi05ZKEJ5JwacslCU+05ZKES1suSbi05ZKEJ9pyScKlLZckXNpyScIlCU+05ZKESxIubfnNBknSapAkrQZJ0mqQJK0GSdJqkCStBknS6odfri2XJFza8kQSnkjCJ7XlTUm4tOVNbfmktlyS8ElJuLTlkoRLEi5t+WaDJGk1SJJWgyRpNUiSVoMkaTVIklaDJGn1wy+XhEtbLkm4tOVNSXhTWz6pLZckXNpyacsTSXgiCZ/UlksSnkjCm5JwacsnDZKk1SBJWg2SpNUgSVoNkqTVIElaDZKk1Q9fLgmXtrwpCU+05U1JeKItT7TlibY8kYQn2nJJwqUtlyT8ZW35ywZJ0mqQJK0GSdJqkCStBknSapAkrQZJ0ir9Bx+UhDe15YkkXNryX5aET2rLE0m4tOWShCfa8kQSLm15UxIubbkk4dKWTxokSatBkrQaJEmrQZK0GiRJq0GStBokSasfvlxbLkm4JOGJtlyS8Ka2XJJwacsnteVNSXiiLZckXNryRBIubbm05U1JuLTlkoRLW77ZIElaDZKk1SBJWg2SpNUgSVoNkqTVIEla/aBTEi5teSIJT7TliSQ80ZYnknBpy5uS8EQSLm15IglvassTSfjLBknSapAkrQZJ0mqQJK0GSdJqkCStBknSKv0HH5SES1suSfgva8slCU+05ZOScGnLJQmXtjyRhP+ytlyS8ERbPmmQJK0GSdJqkCStBknSapAkrQZJ0mqQJK1++LC2PNGW3ywJl7Y80ZZLEi5JuLTlN0vCpS1PtOWShEtb3pSES1suSfjLBknSapAkrQZJ0mqQJK0GSdJqkCStBknS6ocPS8Jf1pZLWy5JuLTlTW25JOGJtrypLZckvCkJb0rCpS3frC3fbJAkrQZJ0mqQJK0GSdJqkCStBknSapAkrdJ/8EFJuLTlmyXh0pZLEi5t+aQkPNGWJ5LwRFs+KQlPtOVNSfhmbfmkQZK0GiRJq0GStBokSatBkrQaJEmrQZK0+uGXS8Kb2vJJSXiiLZckPNGWSxKeaMubkvCmtlyScEnCN2vLXzZIklaDJGk1SJJWgyRpNUiSVoMkaTVIklY/6Ku15ZKESxIubXkiCU+05YkkXNpyacslCZe2XJJwacslCZe2PJGEJ5JwacslCZe2fNIgSVoNkqTVIElaDZKk1SBJWg2SpNUgSVr9oK+WhCfa8qa2XJJwScKlLZe2PJGEJ5JwacslCU8k4Ym2PJGEJ9ryzQZJ0mqQJK0GSdJqkCStBknSapAkrQZJ0uqHX64tv1lbLkn4pCRc2vJEWz6pLZckXNryRFs+KQn6d4MkaTVIklaDJGk1SJJWgyRpNUiSVoMkafXDl0vCX5aES1suSbgk4dKWS1s+KQmXtrypLZck/GZteVMSLm35ZoMkaTVIklaDJGk1SJJWgyRpNUiSVoMkaZX+A0nS/xgkSatBkrQaJEmrQZK0GiRJq0GStBokSatBkrQaJEmrQZK0GiRJq0GStBokSatBkrQaJEmrQZK0GiRJq0GStBokSatBkrQaJEmrQZK0GiRJq0GStBokSatBkrQaJEmrQZK0GiRJq0GStBokSav/A2B8/6QptHrzAAAAAElFTkSuQmCC";
   var E=window.SSJ, $=function(id){return document.getElementById(id)};
   var app=$('app'),home=$('home'),log=$('log'),scrollBox=$('scroll'),form=$('form'),q=$('q'),send=$('send');
   var faqAll=false,lang='th',chosen=false,answered=0,history=[],transcript=[],busy=false,aiAvailable=false,curStage=null,openHome={},openDrawer={};
@@ -1388,6 +1448,21 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
     });
     var li2=el('li'),m=el('button','more',faqAll?u.less:u.more+' ('+E.FAQ.length+')');m.type='button';m.onclick=function(){faqAll=!faqAll;renderFaq()};li2.appendChild(m);ul.appendChild(li2);
   }
+  /* QR card (home + drawer): scan, open or copy the chatbot link */
+  var QRT={th:{t:'สแกนเพื่อเปิดแชตบอทนี้',h:'ให้เพื่อนร่วมงานสแกนด้วยกล้องมือถือ เปิดได้ทันทีไม่ต้องล็อกอิน',c:'คัดลอกลิงก์',d:'คัดลอกแล้ว'},
+    en:{t:'Scan to open this chatbot',h:'A colleague can scan it with their phone camera. No sign-in needed.',c:'Copy link',d:'Copied'},
+    ar:{t:'امسح الرمز لفتح المساعد',h:'يمكن لزميلك مسحه بكاميرا الهاتف، دون تسجيل دخول.',c:'نسخ الرابط',d:'تم النسخ'}};
+  function share(box){
+    if(!box)return;box.innerHTML='';if(!WEBLINK||!QRIMG){box.hidden=true;return}
+    var q=QRT[lang]||QRT.en,img=el('img');img.src=QRIMG;img.alt='QR code: '+WEBLINK;img.width=112;img.height=112;box.appendChild(img);
+    var st=el('div','st');st.appendChild(el('b',null,q.t));st.appendChild(el('small',null,q.h));
+    var a=el('a','url',WEBLINK);a.href=WEBLINK;a.target='_blank';a.rel='noopener';a.dir='ltr';st.appendChild(a);
+    var b=el('button',null,q.c);b.type='button';b.onclick=function(){
+      var ok=function(){b.textContent=q.d;setTimeout(function(){b.textContent=q.c},1400)};
+      var pick=function(){var r=document.createRange();r.selectNodeContents(a);var s=window.getSelection();s.removeAllRanges();s.addRange(r)};
+      try{navigator.clipboard.writeText(WEBLINK).then(ok,pick)}catch(e){pick()}};
+    st.appendChild(b);box.appendChild(st);box.hidden=false;
+  }
   /* Nursing scripts: EN phrase + TH meaning, copy button, safety note */
   var openNurse={};
   function copyText(t,btn){
@@ -1417,7 +1492,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
   var GROUPS=[{k:'grpJourney',std:'HA Part III · JCI ACC / AOP / COP / ASC / IPSG',ids:['before','visit','safety','diagnosis','treatment','rehab','surgery','meds','home']},{k:'grpSupport',std:'HA I-4 · JCI PCC / ACC',ids:['cost','intl','rights']}];
   function setHomeTab(i){homeTab=i;try{localStorage.setItem('ssj-hometab',String(i))}catch(e){}renderHome()}
   function renderHome(){
-    var u=UI[lang];
+    var u=UI[lang];share($('shareHome'));
     var tb=$('htabs');tb.innerHTML='';
     var counts=[E.INTENTS.length,E.FAQ.length,E.NURSE.length];
     u.htabs.forEach(function(t,i){var b=el('button','htab'+(i===homeTab?' on':''));b.type='button';b.setAttribute('role','tab');b.setAttribute('aria-selected',String(i===homeTab));b.appendChild(el('span',null,t));b.appendChild(el('span','cnt',String(counts[i])));b.onclick=function(){setHomeTab(i)};tb.appendChild(b)});
@@ -1452,7 +1527,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 
   function openDrawerAt(stageId){
     openDrawer={};if(stageId)openDrawer[stageId]=true;else if(curStage)openDrawer[curStage]=true;
-    timeline($('drawerTl'),openDrawer);contact();
+    timeline($('drawerTl'),openDrawer);contact();share($('shareDrawer'));
     $('shade').hidden=false;$('drawer').hidden=false;$('closeBtn').focus();
   }
   function closeDrawer(){$('shade').hidden=true;$('drawer').hidden=true}
@@ -1464,7 +1539,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
     q.placeholder=u.ph;send.setAttribute('aria-label',u.send);$('closeBtn').setAttribute('aria-label',u.close);
     $('legalLink').href=site()+'/contactus/';$('faqSrc').textContent=site().replace('https://www.','')+'/questions';
     renderFaq();renderNurse();
-    renderHome();if(!$('drawer').hidden){timeline($('drawerTl'),openDrawer);contact()}
+    renderHome();if(!$('drawer').hidden){timeline($('drawerTl'),openDrawer);contact();share($('shareDrawer'))}
     progress();
   }
 
